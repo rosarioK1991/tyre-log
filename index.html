@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tyre Set Log</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tyre Log">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#eef0ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151917" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<script src="xlsx.full.min.js" defer></script>
+<style>
+@font-face{font-family:"Barlow Condensed";font-weight:600;font-display:swap;src:url(fonts/barlow-condensed-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:700;font-display:swap;src:url(fonts/barlow-condensed-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-weight:400;font-display:swap;src:url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-weight:600;font-display:swap;src:url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-weight:400;font-display:swap;src:url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2")}
+/* Layout: one-hand phone logbook. Set list -> set sheet with sticky car overview, corners stacked for nonstop "Next" entry. */
+:root{
+  --bg:#eef0ee; --panel:#ffffff; --ink:#1d2321; --muted:#5f6b67; --line:#d3d8d5;
+  --accent:#d98a00; --accent-ink:#1d2321; --accent-soft:#fbefd6;
+  --field:#f7f8f7; --ok:#2f7d4f; --warn:#b4471f;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151917; --panel:#1e2421; --ink:#e7ebe9; --muted:#9aa6a1; --line:#333c38;
+  --accent:#f0a325; --accent-ink:#151917; --accent-soft:#3a2e17; --field:#252c29; --ok:#5cbf83; --warn:#ef7e55; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151917; --panel:#1e2421; --ink:#e7ebe9; --muted:#9aa6a1; --line:#333c38;
+  --accent:#f0a325; --accent-ink:#151917; --accent-soft:#3a2e17; --field:#252c29; --ok:#5cbf83; --warn:#ef7e55; color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+img{max-width:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;-webkit-tap-highlight-color:transparent;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:.01em}
+h1{font-size:30px;font-weight:700;text-transform:uppercase}
+h2{font-size:22px;font-weight:600;text-transform:uppercase}
+.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--panel);padding:10px 14px;min-height:44px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn-quiet{background:transparent;border-color:transparent;color:var(--muted)}
+.btn-danger{color:var(--warn);border-color:var(--warn);background:transparent}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.status{font-size:12px;color:var(--muted)}
+.status b{color:var(--ok);font-weight:600}
+.status.local b{color:var(--warn)}
+.examples{font-size:12px;background:var(--accent-soft);padding:8px 10px;border-radius:8px}
+
+/* set list */
+.list{display:flex;flex-direction:column;gap:10px}
+.setcard{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:center;text-align:left;width:100%;padding:12px 14px;background:var(--panel)}
+.setno{grid-row:span 2;font-family:var(--display);font-size:38px;font-weight:700;line-height:1;min-width:54px}
+.setno small{display:block;font-size:11px;font-family:var(--body);color:var(--muted);letter-spacing:.08em;font-weight:600}
+.meta{font-size:13px;color:var(--muted);min-width:0}
+.profiles{display:flex;gap:10px;flex-wrap:wrap}
+.prof{display:flex;flex-direction:column;align-items:center;gap:2px}
+.prof .bars{display:flex;align-items:flex-end;gap:2px;height:26px}
+.prof .bars i{display:block;width:5px;background:var(--ink);opacity:.8;border-radius:1px}
+.prof .bars i.empty{background:var(--line);opacity:1;height:3px!important}
+.prof span{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.06em}
+.empty-state{padding:24px;text-align:center;color:var(--muted);background:var(--panel);border-radius:12px;border:1px dashed var(--line)}
+
+/* editor */
+.sheet{display:flex;flex-direction:column;gap:14px}
+.sticky{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:8px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line)}
+.car{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.car button{display:flex;justify-content:space-between;align-items:flex-end;padding:6px 10px;min-height:48px}
+.car button .cn{font-family:var(--display);font-weight:700;font-size:20px}
+.car button.done{border-color:var(--ok)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:420px){.fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+input{font-family:var(--mono);font-size:18px;width:100%;min-width:0;padding:10px 8px;border-radius:8px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-variant-numeric:tabular-nums}
+input.text{font-family:var(--body);font-size:15px}
+.f.wide{grid-column:1/-1}
+.corner h2{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.corner h2 .avg{font-family:var(--mono);font-size:13px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}
+.grid{display:grid;grid-template-columns:34px repeat(2,minmax(0,1fr));grid-template-rows:auto repeat(5,auto);grid-auto-flow:column;gap:6px;margin-top:8px}
+.grid .h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;align-self:end}
+.grid .p{font-family:var(--mono);font-size:13px;color:var(--muted);align-self:center}
+.grid .na{border:1px dashed var(--line);border-radius:8px}
+.extras{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.bottom{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--panel);border-top:1px solid var(--line);
+  padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.bottom .row{max-width:640px;margin:0 auto;justify-content:space-between}
+.confirm{background:var(--accent-soft);border-radius:10px;padding:10px 12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:14px;z-index:9;max-width:90vw}
+textarea{width:100%;font-family:var(--mono);font-size:12px;min-height:120px;background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+@media (prefers-reduced-motion:no-preference){.toast{transition:opacity .2s}}
+.hint{font-size:12px;color:var(--muted)}
+.filebtn{position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;font-size:0;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const CORNERS=["FL","FR","RL","RR"], NP=5, NS=3, EXTRA=[["tsurf","T surf"],["weight","Weight"],["circ","Circumference"]];
+const SAMPLE=[
+ {setNo:"27",pL:"1.20",pR:"1.23",tInfl:"25",tTarget:"45",note:"",corners:{FL:{wear:["2.58","3.07","3.33","3.26","2.16"]},FR:{wear:["2.54","3.08","3.30","3.20","2.45"]},RL:{wear:["2.22","2.84","3.22","3.16","2.80"]},RR:{wear:["2.12","2.88","3.23","3.13","2.87"]}}},
+ {setNo:"26",pL:"1.20",pR:"1.23",tInfl:"25",tTarget:"45",note:"",corners:{FL:{wear:["2.45","3.17","3.40","3.24","2.19"]},FR:{wear:["2.38","3.12","3.29","3.20","2.83"]},RL:{wear:["2.16","2.99","3.40","3.13","2.45"]},RR:{wear:["2.19","2.87","3.24","3.11","2.87"]}}}
+];
+let mode="local", sets=[], editing=null, dirty=false, saveTimer=null, saving=false, saveAgain=false, confirmDel=false, showCopy=false, usingExamples=false, confirmAll=false;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function blank(){const c={};CORNERS.forEach(k=>c[k]={wear:Array(NP).fill(""),shore:Array(NS).fill(""),tsurf:"",weight:"",circ:""});return c}
+function norm(s){const n=blank();for(const k of CORNERS){const src=(s.corners||{})[k]||{};for(const f of ["wear","shore"])n[k][f]=n[k][f].map((v,i)=>String((src[f]||[])[i]??""));for(const [f] of EXTRA){const v=src[f];n[k][f]=String((Array.isArray(v)?v[0]:v)??"")}}
+  return {id:s.id,setNo:String(s.setNo??""),date:s.date||"",pL:String(s.pL??""),pR:String(s.pR??""),tInfl:String(s.tInfl??""),tTarget:String(s.tTarget??""),note:String(s.note??""),corners:n,updatedAt:s.updatedAt||0}}
+const num=v=>{const t=String(v??"").trim().replace(",",".");if(t==="")return null;const n=Number(t);return isFinite(n)?n:null};
+const sortSets=a=>a.sort((x,y)=>(num(y.setNo)??-1)-(num(x.setNo)??-1)||String(y.setNo).localeCompare(String(x.setNo)));
+function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2600)}
+function lsGet(){try{return JSON.parse(localStorage.getItem("tyre-sets")||"null")}catch(e){return null}}
+function lsSet(){try{localStorage.setItem("tyre-sets",JSON.stringify(sets.filter(x=>!String(x.id).startsWith("example"))));return true}catch(e){return false}}
+function today(){return new Date().toISOString().slice(0,10)}
+
+/* ---------- rendering ---------- */
+function profile(c,label){const vals=c.wear.map(num);const max=4;
+  return `<div class="prof"><div class="bars">${vals.map(v=>v==null?'<i class="empty"></i>':`<i style="height:${Math.max(3,Math.min(26,v/max*26))}px"></i>`).join("")}</div><span>${label}</span></div>`}
+function pressTxt(s){if(!s.pL&&!s.pR)return"—";return s.pL===s.pR||!s.pR?s.pL:`${s.pL} / ${s.pR}`}
+function render(){
+  const app=$("#app");
+  if(editing){renderEditor(app);return}
+  const st=`<span class="status"><b>●</b> Saved on this phone</span>`;
+  app.innerHTML=`
+  <div class="top"><div><div class="label">Tyre measurements</div><h1>Set Log</h1></div>${st}</div>
+  ${usingExamples?`<div class="examples">Showing two example sets. They disappear when you add your first set or import a CSV.</div>`:""}
+  <div class="row"><button class="btn-primary" id="new">+ New set</button>
+    <button id="xlsx" ${sets.length?"":"disabled"}>Excel (.xlsx)</button><button id="csv" ${sets.length?"":"disabled"}>CSV</button><button class="btn-quiet" id="copy" ${sets.length?"":"disabled"}>Copy table</button></div>
+  <div class="hint">Data stays on this phone. Export now and then as a backup; <span class="filebtn"><u>import a CSV</u><input type="file" id="imp" accept=".csv,text/csv"></span> to restore it.</div>
+  ${showCopy?copyBox(sets):""}
+  <div class="list">${sets.length?sets.map(s=>`
+    <button class="setcard" data-id="${esc(s.id)}">
+      <div class="setno"><small>SET</small>${esc(s.setNo||"?")}</div>
+      <div class="meta"><span class="num">${esc(pressTxt(s))}</span> bar · <span class="num">${esc(s.tInfl||"—")}→${esc(s.tTarget||"—")}</span> °C${s.date?` · ${esc(s.date)}`:""}</div>
+      <div class="profiles">${CORNERS.map(k=>profile(s.corners[k],k)).join("")}</div>
+    </button>`).join(""):`<div class="empty-state">No sets yet. Tap <b>+ New set</b> to log your first one.</div>`}</div>
+  ${sets.length&&!usingExamples?(confirmAll?`<div class="confirm row">Delete all ${sets.length} sets? This can't be undone. Export first if you need the data. <button class="btn-danger" id="allyes">Delete all</button><button id="allno">Keep</button></div>`:`<div class="row"><button class="btn-danger" id="delall">Delete all sets</button></div>`):""}`;
+  $("#new").onclick=newSet;
+  $("#xlsx").onclick=()=>exportXlsx(sets);$("#csv").onclick=()=>exportCsv(sets);$("#copy").onclick=()=>{showCopy=!showCopy;render()};
+  if($("#delall"))$("#delall").onclick=()=>{confirmAll=true;render()};
+  if($("#allno"))$("#allno").onclick=()=>{confirmAll=false;render()};
+  if($("#allyes"))$("#allyes").onclick=deleteAll;
+  app.querySelectorAll(".setcard").forEach(b=>b.onclick=()=>{editing=structuredClone(sets.find(s=>s.id===b.dataset.id));confirmDel=false;showCopy=false;render();scrollTo(0,0)});
+  bindCopy();
+  $("#imp").onchange=importCsv;
+  $("#bottombar")?.remove();
+}
+function copyBox(list){return `<div class="panel"><div class="label">Paste into an email or Excel</div><textarea id="copytxt" readonly>${esc(tsv(list))}</textarea><div class="row"><button id="docopy">Copy</button></div></div>`}
+function bindCopy(){const b=$("#docopy");if(!b)return;b.onclick=()=>{const t=$("#copytxt");navigator.clipboard?.writeText(t.value).then(()=>toast("Copied"),()=>{t.select();toast("Selected. Use Copy from the menu")})||(t.select())}}
+function fld(id,label,val,cls=""){return `<label class="f ${cls}"><span class="label">${label}</span><input id="${id}" class="${cls.includes("wide")?"text":""}" ${cls.includes("wide")?'':'inputmode="decimal"'} autocomplete="off" value="${esc(val)}"></label>`}
+function renderEditor(app){
+  const s=editing;
+  const avg=k=>{const v=s.corners[k].wear.map(num).filter(x=>x!=null);return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2):"—"};
+  const spread=k=>{const v=s.corners[k].wear.map(num).filter(x=>x!=null);return v.length>1?(Math.max(...v)-Math.min(...v)).toFixed(2):"—"};
+  const done=k=>s.corners[k].wear.every(v=>v!=="");
+  app.innerHTML=`
+  <div class="sheet">
+    <div class="sticky">
+      <div class="top"><button class="btn-quiet" id="back">‹ All sets</button><span class="status" id="savestate">Saved</span></div>
+      <div class="car">${CORNERS.map(k=>`<button data-jump="${k}" class="${done(k)?"done":""}"><span class="cn">${k}</span>${profile(s.corners[k],"")}</button>`).join("")}</div>
+    </div>
+    <div class="panel"><div class="fields">
+      ${fld("setNo","Set",s.setNo)}${fld("date","Date",s.date)}
+      ${fld("pL","P LHS (bar)",s.pL)}${fld("pR","P RHS (bar)",s.pR)}
+      ${fld("tInfl","T inflation °C",s.tInfl)}${fld("tTarget","T target °C",s.tTarget)}
+      ${fld("note","Notes",s.note,"wide")}
+    </div></div>
+    ${CORNERS.map(k=>`<section class="panel corner" id="c-${k}">
+      <h2><span>${k}</span><span class="avg">avg ${avg(k)} · spread ${spread(k)}</span></h2>
+      <div class="grid">
+        <span></span>${Array.from({length:NP},(_,i)=>`<span class="p">P${i+1}</span>`).join("")}
+        <span class="h">Wear</span>${s.corners[k].wear.map((v,i)=>`<input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="wear" data-i="${i}" value="${esc(v)}" aria-label="${k} wear P${i+1}">`).join("")}
+        <span class="h">Shore</span>${Array.from({length:NP},(_,i)=>i<NS?`<input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="shore" data-i="${i}" value="${esc(s.corners[k].shore[i])}" aria-label="${k} shore P${i+1}">`:'<span class="na"></span>').join("")}
+      </div>
+      <div class="extras">${EXTRA.map(([f,l])=>`<label class="f"><span class="label">${l}</span><input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="${f}" value="${esc(s.corners[k][f])}" aria-label="${k} ${l}"></label>`).join("")}</div></section>`).join("")}
+    <div class="panel"><div class="label">This set</div><div class="row" style="margin-top:8px">
+      <button id="x1">Excel (.xlsx)</button><button id="c1">CSV</button>
+      ${confirmDel?`<div class="confirm row">Delete set ${esc(s.setNo)}? <button class="btn-danger" id="delyes">Delete</button><button id="delno">Keep</button></div>`:`<button class="btn-danger" id="del">Delete set</button>`}
+    </div></div>
+  </div>`;
+  if(!$("#bottombar")){const b=document.createElement("div");b.className="bottom";b.id="bottombar";document.body.appendChild(b)}
+  $("#bottombar").innerHTML=`<div class="row"><button id="bb-back">Done</button><button class="btn-primary" id="bb-x">Export all sets</button></div>`;
+  $("#back").onclick=$("#bb-back").onclick=closeEditor;
+  $("#bb-x").onclick=()=>exportXlsx(sets);
+  $("#x1").onclick=()=>exportXlsx([editing]);$("#c1").onclick=()=>exportCsv([editing]);
+  if($("#del"))$("#del").onclick=()=>{confirmDel=true;render()};
+  if($("#delno"))$("#delno").onclick=()=>{confirmDel=false;render()};
+  if($("#delyes"))$("#delyes").onclick=deleteSet;
+  app.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>{const el=$("#c-"+b.dataset.jump);el.scrollIntoView({behavior:"smooth",block:"start"});setTimeout(()=>el.querySelector("input").focus({preventScroll:true}),350)});
+  ["setNo","date","pL","pR","tInfl","tTarget","note"].forEach(id=>$("#"+id).addEventListener("input",e=>{editing[id]=e.target.value;changed(false)}));
+  app.querySelectorAll("input[data-c]").forEach(inp=>inp.addEventListener("input",e=>{const d=e.target.dataset,v=e.target.value.replace(",",".");if(d.i==null)editing.corners[d.c][d.f]=v;else editing.corners[d.c][d.f][+d.i]=v;if(e.target.value.includes(","))e.target.value=e.target.value.replace(",",".");changed(true)}));
+}
+function refreshEditorBits(){ /* update overview + averages without re-rendering inputs */
+  const s=editing;CORNERS.forEach(k=>{const b=document.querySelector(`[data-jump="${k}"]`);if(b){b.innerHTML=`<span class="cn">${k}</span>${profile(s.corners[k],"")}`;b.classList.toggle("done",s.corners[k].wear.every(v=>v!==""))}
+    const v=s.corners[k].wear.map(num).filter(x=>x!=null);const a=document.querySelector(`#c-${k} .avg`);
+    if(a)a.textContent=`avg ${v.length?(v.reduce((p,q)=>p+q,0)/v.length).toFixed(2):"—"} · spread ${v.length>1?(Math.max(...v)-Math.min(...v)).toFixed(2):"—"}`})}
+function changed(corner){dirty=true;if(corner)refreshEditorBits();const ss=$("#savestate");if(ss)ss.textContent="Saving…";clearTimeout(saveTimer);saveTimer=setTimeout(flush,700)}
+
+/* ---------- persistence ---------- */
+function bodyOf(s){return {setNo:s.setNo,date:s.date,pL:s.pL,pR:s.pR,tInfl:s.tInfl,tTarget:s.tTarget,note:s.note,corners:s.corners,updatedAt:Date.now()}}
+function flush(){
+  if(!editing)return;
+  const snap=structuredClone(editing);snap.updatedAt=Date.now();
+  const i=sets.findIndex(x=>x.id===snap.id);if(i>=0)sets[i]=snap;else sets.push(snap);sortSets(sets);
+  const ok=lsSet();dirty=false;const ss=$("#savestate");if(ss)ss.textContent=ok?"Saved":"Couldn't save. Phone storage full?";
+}
+function newSet(){
+  if(usingExamples){sets=[];usingExamples=false}
+  const last=sets[0];const n=num(last?.setNo);
+  editing=norm({id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())).replace(/-/g,"").slice(0,20),
+    setNo:n!=null?String(n+1):"",date:today(),pL:last?.pL||"",pR:last?.pR||"",tInfl:last?.tInfl||"",tTarget:last?.tTarget||""});
+  confirmDel=false;showCopy=false;render();scrollTo(0,0);flush();setTimeout(()=>$("#setNo")?.focus(),50)}
+function closeEditor(){clearTimeout(saveTimer);if(dirty)flush();editing=null;render();scrollTo(0,0)}
+function deleteAll(){sets=[];confirmAll=false;showCopy=false;usingExamples=false;lsSet();render();toast("All sets deleted")}
+function deleteSet(){const id=editing.id;editing=null;dirty=false;clearTimeout(saveTimer);sets=sets.filter(s=>s.id!==id);lsSet();render();toast("Set deleted")}
+
+/* ---------- export ---------- */
+function longRows(list){const out=[];for(const s of list)for(const k of CORNERS)for(let i=0;i<NP;i++){const c=s.corners[k];
+  out.push([s.setNo,s.date,num(s.pL),num(s.pR),num(s.tInfl),num(s.tTarget),k,i+1,num(c.wear[i]),i<NS?num(c.shore[i]):null,i===0?num(c.tsurf):null,i===0?num(c.weight):null,i===0?num(c.circ):null,s.note])}return out}
+const LONG_H=["Set","Date","P LHS (bar)","P RHS (bar)","T inflation (°C)","T target (°C)","Corner","Point","Wear","Shore","T surf","Weight","Circumference","Notes"];
+function wideRows(list){const h=["Set","Date","P LHS","P RHS","T infl","T target"];CORNERS.forEach(k=>{for(let i=1;i<=NP;i++)h.push(`${k} W${i}`)});
+  CORNERS.forEach(k=>{for(let i=1;i<=NS;i++)h.push(`${k} Sh${i}`)});EXTRA.forEach(([f,l])=>CORNERS.forEach(k=>h.push(`${k} ${l}`)));
+  const rows=list.map(s=>{const r=[s.setNo,s.date,num(s.pL),num(s.pR),num(s.tInfl),num(s.tTarget)];
+    CORNERS.forEach(k=>s.corners[k].wear.forEach(v=>r.push(num(v))));CORNERS.forEach(k=>s.corners[k].shore.forEach(v=>r.push(num(v))));EXTRA.forEach(([f])=>CORNERS.forEach(k=>r.push(num(s.corners[k][f]))));return r});
+  return [h,...rows]}
+function tsv(list){return wideRows(sortSets([...list])).map(r=>r.map(v=>v??"").join("\t")).join("\n")}
+function fname(list,ext){return list.length===1?`tyre-set-${list[0].setNo||"x"}-${today()}.${ext}`:`tyre-sets-${today()}.${ext}`}
+function offer(filename,data,type){
+  const file=new File([data],filename,{type});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:filename}).then(()=>{},e=>{if(e&&e.name!=="AbortError")download(file)});return}
+  download(file)}
+function download(file){const u=URL.createObjectURL(file);const a=document.createElement("a");a.href=u;a.download=file.name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),4000);toast("Saved to Downloads. Share it from the Files app")}
+function exportCsv(list){if(dirty)flush();const q=v=>{v=v??"";v=String(v);return /[",\n;]/.test(v)?`"${v.replace(/"/g,'""')}"`:v};
+  const csv=[LONG_H,...longRows(sortSets([...list]))].map(r=>r.map(q).join(",")).join("\r\n");offer(fname(list,"csv"),"\ufeff"+csv,"text/csv")}
+function exportXlsx(list){if(dirty)flush();if(!window.XLSX){toast("Excel is still loading. Try again in a moment, or use CSV");return}
+  list=sortSets([...list]);const wb=XLSX.utils.book_new();
+  const w=XLSX.utils.aoa_to_sheet(wideRows(list));w["!freeze"]={xSplit:1,ySplit:1};XLSX.utils.book_append_sheet(wb,w,"By set");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([LONG_H,...longRows(list)]),"All points");
+  const sum=[["Set","Corner","Avg wear","Min wear","Max wear","Spread","T surf","Weight","Circumference"]];list.forEach(s=>CORNERS.forEach(k=>{const v=s.corners[k].wear.map(num).filter(x=>x!=null);
+    sum.push([s.setNo,k,v.length?+(v.reduce((a,b)=>a+b,0)/v.length).toFixed(3):null,v.length?Math.min(...v):null,v.length?Math.max(...v):null,v.length?+(Math.max(...v)-Math.min(...v)).toFixed(3):null,num(s.corners[k].tsurf),num(s.corners[k].weight),num(s.corners[k].circ)])}));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Wear summary");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});offer(fname(list,"xlsx"),buf,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+
+/* ---------- import (the app's own CSV export) ---------- */
+function parseCsv(t){const rows=[];let row=[],f="",q=false;t=t.replace(/^\ufeff/,"");
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=ch}
+    else if(ch==='"')q=true;else if(ch===","){row.push(f);f=""}else if(ch==="\n"||ch==="\r"){if(ch==="\r"&&t[i+1]==="\n")i++;row.push(f);rows.push(row);row=[];f=""}else f+=ch}
+  if(f!==""||row.length){row.push(f);rows.push(row)}return rows.filter(r=>r.some(c=>c!==""))}
+function importCsv(e){const file=e.target.files[0];e.target.value="";if(!file)return;
+  file.text().then(t=>{const rows=parseCsv(t);const h=rows.shift()||[];const col=n=>h.indexOf(n);
+    if(col("Set")<0||col("Corner")<0||col("Point")<0||col("Wear")<0){toast("That file isn't a Tyre Set Log CSV export");return}
+    const by=new Map();
+    for(const r of rows){const g=n=>{const i=col(n);return i<0?"":(r[i]??"")};const key=g("Set")+"|"+g("Date");
+      if(!by.has(key))by.set(key,norm({id:"i"+Date.now().toString(36)+by.size,setNo:g("Set"),date:g("Date"),pL:g("P LHS (bar)"),pR:g("P RHS (bar)"),tInfl:g("T inflation (°C)"),tTarget:g("T target (°C)"),note:g("Notes")}));
+      const s=by.get(key),k=g("Corner"),p=+g("Point")-1;if(!s.corners[k]||!(p>=0&&p<NP))continue;
+      s.corners[k].wear[p]=g("Wear");if(p<NS)s.corners[k].shore[p]=g("Shore");
+      if(p===0){s.corners[k].tsurf=g("T surf");s.corners[k].weight=g("Weight");s.corners[k].circ=g("Circumference")}}
+    if(usingExamples){sets=[];usingExamples=false}
+    let added=0,replaced=0;for(const s of by.values()){const i=sets.findIndex(x=>x.setNo===s.setNo&&x.date===s.date);if(i>=0){s.id=sets[i].id;sets[i]=s;replaced++}else{sets.push(s);added++}}
+    sortSets(sets);lsSet();render();toast(`Imported ${added} new set${added===1?"":"s"}${replaced?`, updated ${replaced}`:""}`)
+  },()=>toast("Couldn't read that file"))}
+
+/* ---------- boot ---------- */
+(function boot(){const l=lsGet();if(l&&l.length){sets=sortSets(l.map(norm))}else{sets=SAMPLE.map((s,i)=>norm({...s,id:"example"+i}));usingExamples=true}render()})();
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&dirty){clearTimeout(saveTimer);flush()}});
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+</body>
+</html>
