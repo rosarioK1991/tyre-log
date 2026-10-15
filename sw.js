@@ -1,5 +1,5 @@
 // Offline cache for Tyre Set Log. Bump VERSION whenever any file changes so phones pick up the update.
-const VERSION = "tyre-log-v1";
+const VERSION = "tyre-log-v3";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "xlsx.full.min.js",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png",

@@ -93,6 +93,13 @@ input.text{font-family:var(--body);font-size:15px}
 .grid .h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;align-self:end}
 .grid .p{font-family:var(--mono);font-size:13px;color:var(--muted);align-self:center}
 .grid .na{border:1px dashed var(--line);border-radius:8px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--line);padding:3px;border-radius:12px}
+.tabs button{border:0;border-radius:9px;background:transparent;min-height:40px;font-family:var(--display);font-size:18px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.tabs button[data-phase="old"][aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.phase-tag{display:inline-block;font-size:10px;letter-spacing:.08em;font-weight:700;padding:1px 6px;border-radius:5px;background:var(--line);color:var(--ink);margin-left:6px;vertical-align:middle}
+.phase-tag.old{background:var(--accent);color:var(--accent-ink)}
+.sn{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 .extras{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .bottom{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--panel);border-top:1px solid var(--line);
   padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
@@ -112,7 +119,8 @@ textarea{width:100%;font-family:var(--mono);font-size:12px;min-height:120px;back
 <div class="toast" id="toast" hidden></div>
 
 <script>
-const CORNERS=["FL","FR","RL","RR"], NP=5, NS=3, EXTRA=[["tsurf","T surf"],["weight","Weight"],["circ","Circumference"]];
+const CORNERS=["FL","FR","RL","RR"], NP=5, NS=3, SCAL=["tsurf","weight","weightOld","circ","circOld","tyreSn","sensorSn"];
+let phase="new";const WF=()=>phase==="new"?"wear":"wearOld", CF=()=>phase==="new"?"circ":"circOld", SF=()=>phase==="new"?"shore":"shoreOld", GF=()=>phase==="new"?"weight":"weightOld";
 const SAMPLE=[
  {setNo:"27",pL:"1.20",pR:"1.23",tInfl:"25",tTarget:"45",note:"",corners:{FL:{wear:["2.58","3.07","3.33","3.26","2.16"]},FR:{wear:["2.54","3.08","3.30","3.20","2.45"]},RL:{wear:["2.22","2.84","3.22","3.16","2.80"]},RR:{wear:["2.12","2.88","3.23","3.13","2.87"]}}},
  {setNo:"26",pL:"1.20",pR:"1.23",tInfl:"25",tTarget:"45",note:"",corners:{FL:{wear:["2.45","3.17","3.40","3.24","2.19"]},FR:{wear:["2.38","3.12","3.29","3.20","2.83"]},RL:{wear:["2.16","2.99","3.40","3.13","2.45"]},RR:{wear:["2.19","2.87","3.24","3.11","2.87"]}}}
@@ -120,9 +128,9 @@ const SAMPLE=[
 let mode="local", sets=[], editing=null, dirty=false, saveTimer=null, saving=false, saveAgain=false, confirmDel=false, showCopy=false, usingExamples=false, confirmAll=false;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function blank(){const c={};CORNERS.forEach(k=>c[k]={wear:Array(NP).fill(""),shore:Array(NS).fill(""),tsurf:"",weight:"",circ:""});return c}
-function norm(s){const n=blank();for(const k of CORNERS){const src=(s.corners||{})[k]||{};for(const f of ["wear","shore"])n[k][f]=n[k][f].map((v,i)=>String((src[f]||[])[i]??""));for(const [f] of EXTRA){const v=src[f];n[k][f]=String((Array.isArray(v)?v[0]:v)??"")}}
-  return {id:s.id,setNo:String(s.setNo??""),date:s.date||"",pL:String(s.pL??""),pR:String(s.pR??""),tInfl:String(s.tInfl??""),tTarget:String(s.tTarget??""),note:String(s.note??""),corners:n,updatedAt:s.updatedAt||0}}
+function blank(){const c={};CORNERS.forEach(k=>c[k]={wear:Array(NP).fill(""),wearOld:Array(NP).fill(""),shore:Array(NS).fill(""),shoreOld:Array(NS).fill(""),tsurf:"",weight:"",weightOld:"",circ:"",circOld:"",tyreSn:"",sensorSn:""});return c}
+function norm(s){const n=blank();for(const k of CORNERS){const src=(s.corners||{})[k]||{};for(const f of ["wear","wearOld","shore","shoreOld"])n[k][f]=n[k][f].map((v,i)=>String((src[f]||[])[i]??""));for(const f of SCAL){const v=src[f];n[k][f]=String((Array.isArray(v)?v[0]:v)??"")}}
+  return {id:s.id,setNo:String(s.setNo??""),date:s.date||"",pL:String(s.pL??""),pR:String(s.pR??""),tInfl:String(s.tInfl??""),tTarget:String(s.tTarget??""),km:String(s.km??""),note:String(s.note??""),corners:n,updatedAt:s.updatedAt||0}}
 const num=v=>{const t=String(v??"").trim().replace(",",".");if(t==="")return null;const n=Number(t);return isFinite(n)?n:null};
 const sortSets=a=>a.sort((x,y)=>(num(y.setNo)??-1)-(num(x.setNo)??-1)||String(y.setNo).localeCompare(String(x.setNo)));
 function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2600)}
@@ -131,7 +139,7 @@ function lsSet(){try{localStorage.setItem("tyre-sets",JSON.stringify(sets.filter
 function today(){return new Date().toISOString().slice(0,10)}
 
 /* ---------- rendering ---------- */
-function profile(c,label){const vals=c.wear.map(num);const max=4;
+function profile(c,label,f="wear"){const vals=c[f].map(num);const max=4;
   return `<div class="prof"><div class="bars">${vals.map(v=>v==null?'<i class="empty"></i>':`<i style="height:${Math.max(3,Math.min(26,v/max*26))}px"></i>`).join("")}</div><span>${label}</span></div>`}
 function pressTxt(s){if(!s.pL&&!s.pR)return"—";return s.pL===s.pR||!s.pR?s.pL:`${s.pL} / ${s.pR}`}
 function render(){
@@ -148,7 +156,7 @@ function render(){
   <div class="list">${sets.length?sets.map(s=>`
     <button class="setcard" data-id="${esc(s.id)}">
       <div class="setno"><small>SET</small>${esc(s.setNo||"?")}</div>
-      <div class="meta"><span class="num">${esc(pressTxt(s))}</span> bar · <span class="num">${esc(s.tInfl||"—")}→${esc(s.tTarget||"—")}</span> °C${s.date?` · ${esc(s.date)}`:""}</div>
+      <div class="meta"><span class="num">${esc(pressTxt(s))}</span> bar · <span class="num">${esc(s.tInfl||"—")}→${esc(s.tTarget||"—")}</span> °C${s.km?` · <span class="num">${esc(s.km)}</span> km`:""}${s.date?` · ${esc(s.date)}`:""}</div>
       <div class="profiles">${CORNERS.map(k=>profile(s.corners[k],k)).join("")}</div>
     </button>`).join(""):`<div class="empty-state">No sets yet. Tap <b>+ New set</b> to log your first one.</div>`}</div>
   ${sets.length&&!usingExamples?(confirmAll?`<div class="confirm row">Delete all ${sets.length} sets? This can't be undone. Export first if you need the data. <button class="btn-danger" id="allyes">Delete all</button><button id="allno">Keep</button></div>`:`<div class="row"><button class="btn-danger" id="delall">Delete all sets</button></div>`):""}`;
@@ -164,32 +172,39 @@ function render(){
 }
 function copyBox(list){return `<div class="panel"><div class="label">Paste into an email or Excel</div><textarea id="copytxt" readonly>${esc(tsv(list))}</textarea><div class="row"><button id="docopy">Copy</button></div></div>`}
 function bindCopy(){const b=$("#docopy");if(!b)return;b.onclick=()=>{const t=$("#copytxt");navigator.clipboard?.writeText(t.value).then(()=>toast("Copied"),()=>{t.select();toast("Selected. Use Copy from the menu")})||(t.select())}}
-function fld(id,label,val,cls=""){return `<label class="f ${cls}"><span class="label">${label}</span><input id="${id}" class="${cls.includes("wide")?"text":""}" ${cls.includes("wide")?'':'inputmode="decimal"'} autocomplete="off" value="${esc(val)}"></label>`}
+function fld(id,label,val,cls=""){return `<label class="f ${cls}"><span class="label">${label}</span><input id="${id}" class="${cls.includes("text")?"text":""}" ${cls.includes("text")?'':'inputmode="decimal"'} autocomplete="off" value="${esc(val)}"></label>`}
 function renderEditor(app){
   const s=editing;
-  const avg=k=>{const v=s.corners[k].wear.map(num).filter(x=>x!=null);return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2):"—"};
-  const spread=k=>{const v=s.corners[k].wear.map(num).filter(x=>x!=null);return v.length>1?(Math.max(...v)-Math.min(...v)).toFixed(2):"—"};
-  const done=k=>s.corners[k].wear.every(v=>v!=="");
+  const wf=WF(),cf=CF(),sf=SF(),gf=GF(),PT=`<span class="phase-tag ${phase}">${phase==="new"?"NEW":"OLD"}</span>`;
+  const avg=k=>{const v=s.corners[k][wf].map(num).filter(x=>x!=null);return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2):"—"};
+  const spread=k=>{const v=s.corners[k][wf].map(num).filter(x=>x!=null);return v.length>1?(Math.max(...v)-Math.min(...v)).toFixed(2):"—"};
+  const done=k=>s.corners[k][wf].every(v=>v!=="");
   app.innerHTML=`
   <div class="sheet">
     <div class="sticky">
       <div class="top"><button class="btn-quiet" id="back">‹ All sets</button><span class="status" id="savestate">Saved</span></div>
-      <div class="car">${CORNERS.map(k=>`<button data-jump="${k}" class="${done(k)?"done":""}"><span class="cn">${k}</span>${profile(s.corners[k],"")}</button>`).join("")}</div>
+      <div class="car">${CORNERS.map(k=>`<button data-jump="${k}" class="${done(k)?"done":""}"><span class="cn">${k}</span>${profile(s.corners[k],"",wf)}</button>`).join("")}</div>
+      <div class="tabs" role="tablist" aria-label="Wear and circumference"><button role="tab" data-phase="new" aria-selected="${phase==="new"}">New</button><button role="tab" data-phase="old" aria-selected="${phase==="old"}">Old</button></div>
     </div>
     <div class="panel"><div class="fields">
       ${fld("setNo","Set",s.setNo)}${fld("date","Date",s.date)}
       ${fld("pL","P LHS (bar)",s.pL)}${fld("pR","P RHS (bar)",s.pR)}
       ${fld("tInfl","T inflation °C",s.tInfl)}${fld("tTarget","T target °C",s.tTarget)}
-      ${fld("note","Notes",s.note,"wide")}
+      ${phase==="old"?fld("km","Distance (km) "+'<span class="phase-tag old">OLD</span>',s.km,"wide"):""}
+      ${fld("note","Notes",s.note,"wide text")}
     </div></div>
     ${CORNERS.map(k=>`<section class="panel corner" id="c-${k}">
-      <h2><span>${k}</span><span class="avg">avg ${avg(k)} · spread ${spread(k)}</span></h2>
+      <h2><span>${k}</span><span class="avg">${phase} · avg ${avg(k)} · spread ${spread(k)}</span></h2>
+      <div class="sn">
+        <label class="f"><span class="label">Tyre S/N</span><input class="text" autocomplete="off" autocapitalize="characters" spellcheck="false" data-t="1" data-c="${k}" data-f="tyreSn" value="${esc(s.corners[k].tyreSn)}" aria-label="${k} tyre serial number"></label>
+        <label class="f"><span class="label">Sensor S/N</span><input class="text" autocomplete="off" autocapitalize="characters" spellcheck="false" data-t="1" data-c="${k}" data-f="sensorSn" value="${esc(s.corners[k].sensorSn)}" aria-label="${k} sensor serial number"></label>
+      </div>
       <div class="grid">
         <span></span>${Array.from({length:NP},(_,i)=>`<span class="p">P${i+1}</span>`).join("")}
-        <span class="h">Wear</span>${s.corners[k].wear.map((v,i)=>`<input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="wear" data-i="${i}" value="${esc(v)}" aria-label="${k} wear P${i+1}">`).join("")}
-        <span class="h">Shore</span>${Array.from({length:NP},(_,i)=>i<NS?`<input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="shore" data-i="${i}" value="${esc(s.corners[k].shore[i])}" aria-label="${k} shore P${i+1}">`:'<span class="na"></span>').join("")}
+        <span class="h">Wear ${PT}</span>${s.corners[k][wf].map((v,i)=>`<input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="${wf}" data-i="${i}" value="${esc(v)}" aria-label="${k} wear ${phase} P${i+1}">`).join("")}
+        <span class="h">Shore ${PT}</span>${Array.from({length:NP},(_,i)=>i<NS?`<input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="${sf}" data-i="${i}" value="${esc(s.corners[k][sf][i])}" aria-label="${k} shore ${phase} P${i+1}">`:'<span class="na"></span>').join("")}
       </div>
-      <div class="extras">${EXTRA.map(([f,l])=>`<label class="f"><span class="label">${l}</span><input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="${f}" value="${esc(s.corners[k][f])}" aria-label="${k} ${l}"></label>`).join("")}</div></section>`).join("")}
+      <div class="extras">${[[cf,`Circ. ${PT}`],[gf,`Weight ${PT}`],["tsurf","T surf"]].map(([f,l])=>`<label class="f"><span class="label">${l}</span><input inputmode="decimal" autocomplete="off" data-c="${k}" data-f="${f}" value="${esc(s.corners[k][f])}" aria-label="${k} ${f}"></label>`).join("")}</div></section>`).join("")}
     <div class="panel"><div class="label">This set</div><div class="row" style="margin-top:8px">
       <button id="x1">Excel (.xlsx)</button><button id="c1">CSV</button>
       ${confirmDel?`<div class="confirm row">Delete set ${esc(s.setNo)}? <button class="btn-danger" id="delyes">Delete</button><button id="delno">Keep</button></div>`:`<button class="btn-danger" id="del">Delete set</button>`}
@@ -198,19 +213,20 @@ function renderEditor(app){
   if(!$("#bottombar")){const b=document.createElement("div");b.className="bottom";b.id="bottombar";document.body.appendChild(b)}
   $("#bottombar").innerHTML=`<div class="row"><button id="bb-back">Done</button><button class="btn-primary" id="bb-x">Export all sets</button></div>`;
   $("#back").onclick=$("#bb-back").onclick=closeEditor;
+  app.querySelectorAll("[data-phase]").forEach(b=>b.onclick=()=>{if(phase===b.dataset.phase)return;if(dirty){clearTimeout(saveTimer);flush()}const y=scrollY;phase=b.dataset.phase;render();scrollTo(0,y)});
   $("#bb-x").onclick=()=>exportXlsx(sets);
   $("#x1").onclick=()=>exportXlsx([editing]);$("#c1").onclick=()=>exportCsv([editing]);
   if($("#del"))$("#del").onclick=()=>{confirmDel=true;render()};
   if($("#delno"))$("#delno").onclick=()=>{confirmDel=false;render()};
   if($("#delyes"))$("#delyes").onclick=deleteSet;
   app.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>{const el=$("#c-"+b.dataset.jump);el.scrollIntoView({behavior:"smooth",block:"start"});setTimeout(()=>el.querySelector("input").focus({preventScroll:true}),350)});
-  ["setNo","date","pL","pR","tInfl","tTarget","note"].forEach(id=>$("#"+id).addEventListener("input",e=>{editing[id]=e.target.value;changed(false)}));
-  app.querySelectorAll("input[data-c]").forEach(inp=>inp.addEventListener("input",e=>{const d=e.target.dataset,v=e.target.value.replace(",",".");if(d.i==null)editing.corners[d.c][d.f]=v;else editing.corners[d.c][d.f][+d.i]=v;if(e.target.value.includes(","))e.target.value=e.target.value.replace(",",".");changed(true)}));
+  ["setNo","date","pL","pR","tInfl","tTarget","km","note"].forEach(id=>$("#"+id)?.addEventListener("input",e=>{editing[id]=e.target.value;changed(false)}));
+  app.querySelectorAll("input[data-c]").forEach(inp=>inp.addEventListener("input",e=>{const d=e.target.dataset,v=d.t?e.target.value.trim():e.target.value.replace(",",".");if(d.i==null)editing.corners[d.c][d.f]=v;else editing.corners[d.c][d.f][+d.i]=v;if(!d.t&&e.target.value.includes(","))e.target.value=e.target.value.replace(",",".");changed(true)}));
 }
 function refreshEditorBits(){ /* update overview + averages without re-rendering inputs */
-  const s=editing;CORNERS.forEach(k=>{const b=document.querySelector(`[data-jump="${k}"]`);if(b){b.innerHTML=`<span class="cn">${k}</span>${profile(s.corners[k],"")}`;b.classList.toggle("done",s.corners[k].wear.every(v=>v!==""))}
-    const v=s.corners[k].wear.map(num).filter(x=>x!=null);const a=document.querySelector(`#c-${k} .avg`);
-    if(a)a.textContent=`avg ${v.length?(v.reduce((p,q)=>p+q,0)/v.length).toFixed(2):"—"} · spread ${v.length>1?(Math.max(...v)-Math.min(...v)).toFixed(2):"—"}`})}
+  const s=editing;CORNERS.forEach(k=>{const b=document.querySelector(`[data-jump="${k}"]`);if(b){b.innerHTML=`<span class="cn">${k}</span>${profile(s.corners[k],"",WF())}`;b.classList.toggle("done",s.corners[k][WF()].every(v=>v!==""))}
+    const v=s.corners[k][WF()].map(num).filter(x=>x!=null);const a=document.querySelector(`#c-${k} .avg`);
+    if(a)a.textContent=`${phase} · avg ${v.length?(v.reduce((p,q)=>p+q,0)/v.length).toFixed(2):"—"} · spread ${v.length>1?(Math.max(...v)-Math.min(...v)).toFixed(2):"—"}`})}
 function changed(corner){dirty=true;if(corner)refreshEditorBits();const ss=$("#savestate");if(ss)ss.textContent="Saving…";clearTimeout(saveTimer);saveTimer=setTimeout(flush,700)}
 
 /* ---------- persistence ---------- */
@@ -226,21 +242,26 @@ function newSet(){
   const last=sets[0];const n=num(last?.setNo);
   editing=norm({id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())).replace(/-/g,"").slice(0,20),
     setNo:n!=null?String(n+1):"",date:today(),pL:last?.pL||"",pR:last?.pR||"",tInfl:last?.tInfl||"",tTarget:last?.tTarget||""});
-  confirmDel=false;showCopy=false;render();scrollTo(0,0);flush();setTimeout(()=>$("#setNo")?.focus(),50)}
+  phase="new";confirmDel=false;showCopy=false;render();scrollTo(0,0);flush();setTimeout(()=>$("#setNo")?.focus(),50)}
 function closeEditor(){clearTimeout(saveTimer);if(dirty)flush();editing=null;render();scrollTo(0,0)}
 function deleteAll(){sets=[];confirmAll=false;showCopy=false;usingExamples=false;lsSet();render();toast("All sets deleted")}
 function deleteSet(){const id=editing.id;editing=null;dirty=false;clearTimeout(saveTimer);sets=sets.filter(s=>s.id!==id);lsSet();render();toast("Set deleted")}
 
 /* ---------- export ---------- */
-function longRows(list){const out=[];for(const s of list)for(const k of CORNERS)for(let i=0;i<NP;i++){const c=s.corners[k];
-  out.push([s.setNo,s.date,num(s.pL),num(s.pR),num(s.tInfl),num(s.tTarget),k,i+1,num(c.wear[i]),i<NS?num(c.shore[i]):null,i===0?num(c.tsurf):null,i===0?num(c.weight):null,i===0?num(c.circ):null,s.note])}return out}
-const LONG_H=["Set","Date","P LHS (bar)","P RHS (bar)","T inflation (°C)","T target (°C)","Corner","Point","Wear","Shore","T surf","Weight","Circumference","Notes"];
-function wideRows(list){const h=["Set","Date","P LHS","P RHS","T infl","T target"];CORNERS.forEach(k=>{for(let i=1;i<=NP;i++)h.push(`${k} W${i}`)});
-  CORNERS.forEach(k=>{for(let i=1;i<=NS;i++)h.push(`${k} Sh${i}`)});EXTRA.forEach(([f,l])=>CORNERS.forEach(k=>h.push(`${k} ${l}`)));
-  const rows=list.map(s=>{const r=[s.setNo,s.date,num(s.pL),num(s.pR),num(s.tInfl),num(s.tTarget)];
-    CORNERS.forEach(k=>s.corners[k].wear.forEach(v=>r.push(num(v))));CORNERS.forEach(k=>s.corners[k].shore.forEach(v=>r.push(num(v))));EXTRA.forEach(([f])=>CORNERS.forEach(k=>r.push(num(s.corners[k][f]))));return r});
+const avgOf=a=>{const v=a.map(num).filter(x=>x!=null);return v.length?+(v.reduce((p,q)=>p+q,0)/v.length).toFixed(3):null};
+const diff=(a,b)=>{a=num(a);b=num(b);return a==null||b==null?null:+(a-b).toFixed(3)};
+function longRows(list){const out=[];for(const s of list)for(const k of CORNERS)for(let i=0;i<NP;i++){const c=s.corners[k],p1=i===0,sh=i<NS;
+  out.push([s.setNo,s.date,num(s.pL),num(s.pR),num(s.tInfl),num(s.tTarget),num(s.km),k,c.tyreSn,c.sensorSn,i+1,
+    num(c.wear[i]),num(c.wearOld[i]),diff(c.wear[i],c.wearOld[i]),sh?num(c.shore[i]):null,sh?num(c.shoreOld[i]):null,
+    p1?num(c.weight):null,p1?num(c.weightOld):null,p1?num(c.circ):null,p1?num(c.circOld):null,p1?num(c.tsurf):null,s.note])}return out}
+const LONG_H=["Set","Date","P LHS (bar)","P RHS (bar)","T inflation (°C)","T target (°C)","Distance (km)","Corner","Tyre S/N","Sensor S/N","Point","Wear new","Wear old","Wear loss","Shore new","Shore old","Weight new","Weight old","Circumference new","Circumference old","T surf","Notes"];
+function wideRows(list,ph){const o=ph==="old",wf=o?"wearOld":"wear",cf=o?"circOld":"circ",sf=o?"shoreOld":"shore",gf=o?"weightOld":"weight";
+  const h=["Set","Date","P LHS","P RHS","T infl","T target"];if(o)h.push("Distance (km)");
+  CORNERS.forEach(k=>{h.push(`${k} Tyre S/N`,`${k} Sensor S/N`);for(let i=1;i<=NP;i++)h.push(`${k} W${i}`);for(let i=1;i<=NS;i++)h.push(`${k} Sh${i}`);h.push(`${k} Weight`,`${k} Circ`,`${k} T surf`)});
+  const rows=list.map(s=>{const r=[s.setNo,s.date,num(s.pL),num(s.pR),num(s.tInfl),num(s.tTarget)];if(o)r.push(num(s.km));
+    CORNERS.forEach(k=>{const c=s.corners[k];r.push(c.tyreSn,c.sensorSn,...c[wf].map(num),...c[sf].map(num),num(c[gf]),num(c[cf]),num(c.tsurf))});return r});
   return [h,...rows]}
-function tsv(list){return wideRows(sortSets([...list])).map(r=>r.map(v=>v??"").join("\t")).join("\n")}
+function tsv(list){const t=ph=>wideRows(sortSets([...list]),ph).map(r=>r.map(v=>v??"").join("\t")).join("\n");return "NEW\n"+t("new")+"\n\nOLD\n"+t("old")}
 function fname(list,ext){return list.length===1?`tyre-set-${list[0].setNo||"x"}-${today()}.${ext}`:`tyre-sets-${today()}.${ext}`}
 function offer(filename,data,type){
   const file=new File([data],filename,{type});
@@ -253,11 +274,13 @@ function exportCsv(list){if(dirty)flush();const q=v=>{v=v??"";v=String(v);return
   const csv=[LONG_H,...longRows(sortSets([...list]))].map(r=>r.map(q).join(",")).join("\r\n");offer(fname(list,"csv"),"\ufeff"+csv,"text/csv")}
 function exportXlsx(list){if(dirty)flush();if(!window.XLSX){toast("Excel is still loading. Try again in a moment, or use CSV");return}
   list=sortSets([...list]);const wb=XLSX.utils.book_new();
-  const w=XLSX.utils.aoa_to_sheet(wideRows(list));w["!freeze"]={xSplit:1,ySplit:1};XLSX.utils.book_append_sheet(wb,w,"By set");
+  for(const [ph,name] of [["new","New"],["old","Old"]]){const w=XLSX.utils.aoa_to_sheet(wideRows(list,ph));w["!freeze"]={xSplit:1,ySplit:1};XLSX.utils.book_append_sheet(wb,w,name)}
+  const sum=[["Set","Distance (km)","Corner","Tyre S/N","Sensor S/N","Avg wear new","Avg wear old","Avg wear loss","Spread new","Spread old","Avg shore new","Avg shore old","Weight new","Weight old","Weight change","Circ new","Circ old","Circ change","T surf"]];
+  const spr=a=>{const v=a.map(num).filter(x=>x!=null);return v.length>1?+(Math.max(...v)-Math.min(...v)).toFixed(3):null};
+  list.forEach(s=>CORNERS.forEach(k=>{const c=s.corners[k],an=avgOf(c.wear),ao=avgOf(c.wearOld);
+    sum.push([s.setNo,num(s.km),k,c.tyreSn,c.sensorSn,an,ao,avgOf(c.wear.map((v,i)=>diff(v,c.wearOld[i]))),spr(c.wear),spr(c.wearOld),avgOf(c.shore),avgOf(c.shoreOld),num(c.weight),num(c.weightOld),diff(c.weight,c.weightOld),num(c.circ),num(c.circOld),diff(c.circ,c.circOld),num(c.tsurf)])}));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Summary");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([LONG_H,...longRows(list)]),"All points");
-  const sum=[["Set","Corner","Avg wear","Min wear","Max wear","Spread","T surf","Weight","Circumference"]];list.forEach(s=>CORNERS.forEach(k=>{const v=s.corners[k].wear.map(num).filter(x=>x!=null);
-    sum.push([s.setNo,k,v.length?+(v.reduce((a,b)=>a+b,0)/v.length).toFixed(3):null,v.length?Math.min(...v):null,v.length?Math.max(...v):null,v.length?+(Math.max(...v)-Math.min(...v)).toFixed(3):null,num(s.corners[k].tsurf),num(s.corners[k].weight),num(s.corners[k].circ)])}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Wear summary");
   const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});offer(fname(list,"xlsx"),buf,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
 
 /* ---------- import (the app's own CSV export) ---------- */
@@ -268,13 +291,14 @@ function parseCsv(t){const rows=[];let row=[],f="",q=false;t=t.replace(/^\ufeff/
   if(f!==""||row.length){row.push(f);rows.push(row)}return rows.filter(r=>r.some(c=>c!==""))}
 function importCsv(e){const file=e.target.files[0];e.target.value="";if(!file)return;
   file.text().then(t=>{const rows=parseCsv(t);const h=rows.shift()||[];const col=n=>h.indexOf(n);
-    if(col("Set")<0||col("Corner")<0||col("Point")<0||col("Wear")<0){toast("That file isn't a Tyre Set Log CSV export");return}
+    if(col("Set")<0||col("Corner")<0||col("Point")<0||(col("Wear")<0&&col("Wear new")<0)){toast("That file isn't a Tyre Set Log CSV export");return}
     const by=new Map();
     for(const r of rows){const g=n=>{const i=col(n);return i<0?"":(r[i]??"")};const key=g("Set")+"|"+g("Date");
-      if(!by.has(key))by.set(key,norm({id:"i"+Date.now().toString(36)+by.size,setNo:g("Set"),date:g("Date"),pL:g("P LHS (bar)"),pR:g("P RHS (bar)"),tInfl:g("T inflation (°C)"),tTarget:g("T target (°C)"),note:g("Notes")}));
+      if(!by.has(key))by.set(key,norm({id:"i"+Date.now().toString(36)+by.size,setNo:g("Set"),date:g("Date"),pL:g("P LHS (bar)"),pR:g("P RHS (bar)"),tInfl:g("T inflation (°C)"),tTarget:g("T target (°C)"),km:g("Distance (km)"),note:g("Notes")}));
       const s=by.get(key),k=g("Corner"),p=+g("Point")-1;if(!s.corners[k]||!(p>=0&&p<NP))continue;
-      s.corners[k].wear[p]=g("Wear");if(p<NS)s.corners[k].shore[p]=g("Shore");
-      if(p===0){s.corners[k].tsurf=g("T surf");s.corners[k].weight=g("Weight");s.corners[k].circ=g("Circumference")}}
+      const c=s.corners[k],G=(a,b)=>col(a)>=0?g(a):g(b);c.wear[p]=G("Wear new","Wear");c.wearOld[p]=g("Wear old");if(p<NS){c.shore[p]=G("Shore new","Shore");c.shoreOld[p]=g("Shore old")}
+      if(g("Tyre S/N"))c.tyreSn=g("Tyre S/N");if(g("Sensor S/N"))c.sensorSn=g("Sensor S/N");
+      if(p===0){c.tsurf=g("T surf");c.weight=G("Weight new","Weight");c.weightOld=g("Weight old");c.circ=G("Circumference new","Circumference");c.circOld=g("Circumference old")}}
     if(usingExamples){sets=[];usingExamples=false}
     let added=0,replaced=0;for(const s of by.values()){const i=sets.findIndex(x=>x.setNo===s.setNo&&x.date===s.date);if(i>=0){s.id=sets[i].id;sets[i]=s;replaced++}else{sets.push(s);added++}}
     sortSets(sets);lsSet();render();toast(`Imported ${added} new set${added===1?"":"s"}${replaced?`, updated ${replaced}`:""}`)
